@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Funny Friends: 选择你的英雄</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Inter:wght@400;700;900&family=Kanit:wght@400;600;800&family=VT323&display=swap" rel="stylesheet">
+    
+    <!-- Babel for JSX compilation in browser -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+      /* Custom Utilities */
+      .preserve-3d { transform-style: preserve-3d; }
+      .backface-hidden { backface-visibility: hidden; }
+      .rotate-y-180 { transform: rotateY(180deg); }
+      .perspective-1000 { perspective: 1000px; }
+      body { font-family: 'Inter', sans-serif; }
+      h1, h2, .comic-font { font-family: 'Bangers', cursive; }
+      .heading-font { font-family: 'Kanit', sans-serif; }
+      .pixel-font { font-family: 'VT323', monospace; }
+      
+      @keyframes marquee {
+        0% { transform: translateX(0); }
+        100% { transform: translateX(-50%); }
+      }
+      .animate-marquee { display: inline-flex; animation: marquee 20s linear infinite; }
+      
+      @keyframes glitch {
+        0% { transform: translate(0); }
+        20% { transform: translate(-2px, 2px); }
+        40% { transform: translate(-2px, -2px); }
+        60% { transform: translate(2px, 2px); }
+        80% { transform: translate(2px, -2px); }
+        100% { transform: translate(0); }
+      }
+      .animate-glitch { animation: glitch 0.3s cubic-bezier(.25, .46, .45, .94) both infinite; }
+      
+      /* Hide scrollbar for cleaner look */
+      ::-webkit-scrollbar { width: 8px; }
+      ::-webkit-scrollbar-track { bg: #000; }
+      ::-webkit-scrollbar-thumb { bg: #ccff00; border: 2px solid black; }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0",
+    "vite": "https://aistudiocdn.com/vite@^7.2.6",
+    "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.1"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body class="bg-[#ccff00] text-black overflow-x-hidden selection:bg-black selection:text-[#ccff00]">
+    <div id="root"></div>
+
+    <!-- MAIN LOGIC SCRIPT -->
+    <script type="text/babel" data-type="module">
+      // --- IMPORTANT: CONFIGURATION ---
+      // 在下面单引号中间，粘贴你的 API Key
+      const API_KEY = '在此处粘贴你的API_KEY'; 
+
+      // --- IMPORTS (ESM for Browser) ---
+      // 使用 esm.sh 统一管理依赖，确保兼容性
+      import React, { useState, useEffect } from "https://esm.sh/react@18.2.0";
+      import ReactDOM from "https://esm.sh/react-dom@18.2.0/client";
+      import { GoogleGenAI, Type } from "https://esm.run/@google/genai";
+      import { Ghost, Binary, Scan, Skull, AlertTriangle, Zap, Crosshair, Barcode, ArrowLeft, RefreshCw, Play, Volume2 } from "https://esm.sh/lucide-react@0.300.0?deps=react@18.2.0";
+
+      // --- TYPES & CONSTANTS ---
+      const HEROES = [
+        {
+          id: 'grumpy-bro',
+          name: '暴躁哥 (Grumpy Bro)',
+          title: 'THE RAGE MACHINE',
+          imageUrl: 'https://storage.googleapis.com/dn-internal-ai-dev.appspot.com/ai/bot/7vxw0r06yd/image/20251203152442xrw2.png',
+          videoUrl: 'https://livjeus.github.io/liujie.app/%E5%BE%AE%E4%BF%A1%E8%A7%86%E9%A2%912025-12-03_155826_454.mp4',
+          baseTraits: ['always angry', 'hates mornings', 'screams at wifi', 'secretly loves kittens'],
+          colorTheme: 'red-600',
+        },
+        {
+          id: 'slacker-queen',
+          name: '摸鱼女王 (Slacker Queen)',
+          title: 'PROFESSIONAL NAPPER',
+          imageUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?q=80&w=1000&auto=format&fit=crop',
+          baseTraits: ['lazy', 'addicted to boba', 'replies after 3 days', 'expert procrastinator'],
+          colorTheme: 'purple-600',
+        },
+        {
+          id: 'drama-king',
+          name: '戏精之王 (Drama King)',
+          title: 'MAIN CHARACTER ENERGY',
+          imageUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=1000&auto=format&fit=crop',
+          baseTraits: ['overdramatic', 'gossip engine', 'cries over spilled milk', 'fashion victim'],
+          colorTheme: 'pink-500',
+        },
+        {
+          id: 'meme-lord',
+          name: '憋气大帝 (Meme Lord)',
+          title: 'TERMINELLY ONLINE',
+          imageUrl: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?q=80&w=1000&auto=format&fit=crop',
+          baseTraits: ['speaks in gifs', 'troll', 'no social skills', 'keyboard warrior'],
+          colorTheme: 'blue-600',
+        },
+      ];
+
+      // --- GEMINI SERVICE ---
+      const generateFunnyBio = async (name, traits) => {
+        // Check API Key
+        if (!API_KEY || API_KEY.includes('在此处')) {
+          return {
+            bio: "⚠️ 警告：未检测到 API Key！请在 index.html 代码中第 45 行填写 Key，否则我无法进行吐槽。",
+            powerMove: "API Key Missing",
+            weakness: "Configuration Error",
+          };
+        }
+
+        const ai = new GoogleGenAI({ apiKey: API_KEY });
+
+        const prompt = `
+          You are a savage roaster. Create a funny, roasting profile for this character in Chinese.
+          
+          Character Name: ${name}
+          Traits: ${traits.join(', ')}.
+          
+          Return a JSON object with these exact keys:
+          - bio: A short, spicy, and funny roast description in Chinese (approx 30-50 words). Make it sound like a meme comment.
+          - powerMove: A hilarious, useless special ability name in Chinese.
+          - weakness: An absurd, funny weakness in Chinese.
+        `;
+
+        try {
+          const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+              responseMimeType: "application/json",
+              maxOutputTokens: 1000, 
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  bio: { type: Type.STRING },
+                  powerMove: { type: Type.STRING },
+                  weakness: { type: Type.STRING },
+                },
+                required: ["bio", "powerMove", "weakness"],
+              },
+            },
+          });
+
+          const text = response.text;
+          if (!text) throw new Error("Empty response from AI");
+          const result = JSON.parse(text);
+
+          return {
+            bio: result.bio || "这家伙太普通了，连 AI 都懒得吐槽... (数据缺失)",
+            powerMove: result.powerMove || "平地摔",
+            weakness: result.weakness || "存在感为零",
+          };
+
+        } catch (error) {
+          console.error("Gemini generation failed", error);
+          return {
+            bio: "系统过载！这人的槽点太多，导致 AI 处理器烧毁了... (请检查 API Key 配额或网络)",
+            powerMove: "404 Not Found",
+            weakness: "断网",
+          };
+        }
+      };
+
+      // --- COMPONENTS ---
+
+      // 1. HeroCard Component
+      const HeroCard = ({ hero, isSelected, onSelect }) => {
+        return (
+          <div 
+            className={`relative h-[480px] w-full max-w-[320px] cursor-pointer perspective-1000 group transition-all duration-300 hover:-translate-y-2 ${isSelected ? 'z-50' : 'z-10'}`}
+            onClick={() => onSelect(hero)}
+          >
+            <div 
+              className={`relative w-full h-full duration-700 preserve-3d shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] group-hover:shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] border-4 border-black bg-white ${isSelected ? 'rotate-y-180' : ''}`}
+            >
+              {/* FRONT SIDE */}
+              <div className={`absolute w-full h-full backface-hidden flex flex-col`}>
+                <div className="h-10 border-b-4 border-black flex items-center justify-between px-3 bg-white">
+                   <span className="font-mono font-bold text-xs tracking-tighter">ID-{hero.id.slice(0,3).toUpperCase()}</span>
+                   <div className="flex gap-1">
+                      <div className="w-2 h-2 bg-black rounded-full"></div>
+                      <div className="w-2 h-2 bg-gray-300 rounded-full"></div>
+                      <div className="w-2 h-2 bg-gray-300 rounded-full"></div>
+                   </div>
+                </div>
+                <div className="relative flex-1 w-full overflow-hidden border-b-4 border-black group">
+                  <img src={hero.imageUrl} alt={hero.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                  <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/3px-tile.png')] opacity-10 pointer-events-none"></div>
+                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-black/10 backdrop-blur-[1px]">
+                     <div className="bg-[#ccff00] text-black font-black text-4xl heading-font px-6 py-2 border-4 border-black shadow-[6px_6px_0px_0px_rgba(255,255,255,1)]">
+                        SELECT
+                     </div>
+                  </div>
+                </div>
+                <div className="h-28 flex flex-col justify-center px-5 bg-white relative">
+                   <div className="flex items-end justify-between mb-1">
+                      <h3 className="text-2xl font-black uppercase heading-font tracking-tight leading-none">{hero.name}</h3>
+                      <Scan size={20} className="text-gray-400" />
+                   </div>
+                   <div className="w-full h-px bg-gray-300 my-2"></div>
+                   <p className="text-xs font-bold uppercase tracking-widest text-gray-500 font-mono">Class: {hero.title}</p>
+                   <div className={`absolute bottom-0 left-0 w-full h-2 bg-${hero.colorTheme}`}></div>
+                </div>
+              </div>
+
+              {/* BACK SIDE */}
+              <div className={`absolute w-full h-full backface-hidden rotate-y-180 bg-[#1a1a1a] border-4 border-black flex flex-col items-center justify-center p-6 text-[#ccff00] pixel-font`}>
+                 <div className="text-center relative mb-12">
+                   <Ghost className="w-16 h-16 mx-auto mb-4 animate-bounce" />
+                   <h2 className="text-4xl font-bold animate-glitch">LOADING</h2>
+                 </div>
+                 <div className="w-full border-2 border-[#ccff00] p-1 mb-2 bg-black">
+                   <div className="h-4 bg-[#ccff00] animate-[width_1.5s_ease-in-out_infinite] w-[0%]"></div>
+                 </div>
+                 <div className="flex items-center justify-between w-full text-lg mt-2 font-mono">
+                   <span>DATA.FETCH</span>
+                   <Binary className="w-4 h-4 animate-spin" />
+                 </div>
+                 <div className="absolute bottom-4 left-4 right-4 flex justify-between text-[10px] opacity-50 font-sans text-white">
+                   <span>SECURE CONNECTION</span>
+                   <span>ENCRYPTED</span>
+                 </div>
+              </div>
+            </div>
+          </div>
+        );
+      };
+
+      // 2. DetailView Component
+      const DetailView = ({ hero, onBack }) => {
+        const [content, setContent] = useState(null);
+        const [loading, setLoading] = useState(true);
+
+        useEffect(() => {
+          const fetchContent = async () => {
+            setLoading(true);
+            setContent(null); 
+            const data = await generateFunnyBio(hero.name, hero.baseTraits);
+            setContent(data);
+            setLoading(false);
+          };
+          fetchContent();
+        }, [hero]);
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300">
+            <div className="w-full max-w-5xl h-[90vh] bg-white border-4 border-black shadow-[12px_12px_0px_0px_rgba(255,255,255,1)] flex flex-col md:flex-row overflow-hidden relative">
+              <button 
+                onClick={onBack}
+                className="absolute top-4 right-4 z-50 bg-red-500 hover:bg-red-600 text-white border-4 border-black p-2 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-transform active:translate-y-1 active:shadow-none"
+              >
+                <ArrowLeft size={32} />
+              </button>
+
+              <div className={`w-full md:w-1/2 h-1/2 md:h-full relative border-b-4 md:border-b-0 md:border-r-4 border-black bg-${hero.colorTheme} flex items-center justify-center overflow-hidden`}>
+                {hero.id === 'grumpy-bro' && hero.videoUrl ? (
+                  <div className="relative w-full h-full flex items-center justify-center bg-black">
+                    <video src={hero.videoUrl} controls autoPlay loop className="w-full h-full object-cover" />
+                    <div className="absolute top-4 left-4 bg-red-600 text-white px-3 py-1 font-bold border-2 border-white animate-pulse">LIVE FOOTAGE</div>
+                  </div>
+                ) : (
+                   <img src={hero.imageUrl} alt={hero.name} className="w-full h-full object-cover" />
+                )}
+                <div className="absolute bottom-8 left-0 bg-yellow-400 border-y-4 border-r-4 border-black px-6 py-4 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] transform -rotate-2">
+                  <h1 className="text-4xl md:text-5xl font-black comic-font uppercase">{hero.name}</h1>
+                </div>
+              </div>
+
+              <div className="w-full md:w-1/2 h-1/2 md:h-full p-8 flex flex-col overflow-y-auto bg-slate-100 bg-[url('https://www.transparenttextures.com/patterns/notebook.png')]">
+                  <div className="mb-8 mt-4">
+                    <span className={`inline-block px-4 py-1 text-white bg-black font-mono text-sm mb-2 rotate-1`}>ID: {hero.id.toUpperCase()}</span>
+                    <h2 className={`text-4xl font-black text-${hero.colorTheme} uppercase leading-none`}>{hero.title}</h2>
+                  </div>
+
+                  {loading ? (
+                    <div className="flex-1 flex flex-col items-center justify-center space-y-4">
+                      <RefreshCw className="animate-spin w-12 h-12 text-black" />
+                      <p className="font-bold text-xl animate-pulse">AI 正在疯狂吐槽中...</p>
+                    </div>
+                  ) : content ? (
+                    <div className="space-y-6 flex-1">
+                      <div className="bg-white p-6 border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] transform rotate-1 transition-transform hover:rotate-0">
+                        <h3 className="font-black text-xl mb-2 underline decoration-wavy decoration-pink-500">AI 毒舌点评 🔥</h3>
+                        <p className="text-lg font-bold leading-relaxed font-sans text-gray-800">{content.bio}</p>
+                      </div>
+                      <div className="grid grid-cols-1 gap-4">
+                         <div className="bg-blue-400 p-4 border-4 border-black shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] text-white transform -rotate-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Play className="fill-current w-5 h-5" />
+                              <h4 className="font-black uppercase">必杀技</h4>
+                            </div>
+                            <p className="font-bold text-xl">{content.powerMove}</p>
+                         </div>
+                         <div className="bg-red-400 p-4 border-4 border-black shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] text-white transform rotate-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Volume2 className="w-5 h-5" />
+                              <h4 className="font-black uppercase">致命弱点</h4>
+                            </div>
+                            <p className="font-bold text-xl">{content.weakness}</p>
+                         </div>
+                      </div>
+                    </div>
+                  ) : null}
+              </div>
+            </div>
+          </div>
+        );
+      };
+
+      // 3. App Component
+      const App = () => {
+        const [selectedHero, setSelectedHero] = useState(null);
+        const [flippedHeroId, setFlippedHeroId] = useState(null);
+
+        const handleHeroSelect = (hero) => {
+          setFlippedHeroId(hero.id);
+          setTimeout(() => {
+            setSelectedHero(hero);
+          }, 600);
+        };
+
+        const handleBack = () => {
+          setSelectedHero(null);
+          setTimeout(() => {
+            setFlippedHeroId(null);
+          }, 100);
+        };
+
+        return (
+          <div className="min-h-screen w-full bg-[#ccff00] bg-[linear-gradient(to_right,#00000008_1px,transparent_1px),linear-gradient(to_bottom,#00000008_1px,transparent_1px)] bg-[size:48px_48px] relative overflow-x-hidden font-sans">
+            <div className="fixed top-6 left-6 z-0 opacity-50 pointer-events-none"><Crosshair size={48} strokeWidth={1} /></div>
+            <div className="fixed top-6 right-6 z-0 opacity-50 pointer-events-none hidden md:block">
+              <div className="flex gap-2">
+                 <div className="w-4 h-4 bg-black"></div>
+                 <div className="w-4 h-4 border-2 border-black"></div>
+                 <div className="w-4 h-4 bg-black"></div>
+              </div>
+            </div>
+
+            <header className="pt-20 pb-16 text-center relative z-10 flex flex-col items-center">
+              <div className="mb-4 border border-black bg-white px-3 py-1 text-xs font-mono tracking-widest uppercase shadow-[4px_4px_0px_0px_rgba(0,0,0,0.1)]">Collection 2025 // Vol. 1</div>
+              <div className="relative">
+                 <div className="bg-white border-4 border-black px-12 py-6 shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] relative z-10">
+                    <h1 className="text-5xl md:text-7xl font-black heading-font tracking-tight uppercase text-black leading-none">
+                      请选择<span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-blue-600">你的英雄</span>
+                    </h1>
+                    <div className="absolute -top-6 -left-6 bg-black text-white px-3 py-1 font-mono text-sm rotate-[-4deg]">CHOOSE WISELY</div>
+                 </div>
+                 <div className="absolute top-0 left-0 w-full h-full bg-purple-500 border-4 border-black transform translate-x-3 translate-y-3 z-0"></div>
+              </div>
+              <div className="mt-12 flex flex-wrap justify-center gap-4">
+                <div className="bg-transparent border-2 border-black px-6 py-2 rounded-full font-bold text-lg hover:bg-black hover:text-[#ccff00] transition-colors cursor-default flex items-center gap-2"><Skull size={18} /> 奇葩朋友</div>
+                <div className="bg-transparent border-2 border-black px-6 py-2 rounded-full font-bold text-lg hover:bg-black hover:text-[#ccff00] transition-colors cursor-default flex items-center gap-2"><AlertTriangle size={18} /> 纯属虚构</div>
+                <div className="bg-transparent border-2 border-black px-6 py-2 rounded-full font-bold text-lg hover:bg-black hover:text-[#ccff00] transition-colors cursor-default flex items-center gap-2"><Zap size={18} /> 禁止急眼</div>
+              </div>
+            </header>
+
+            <main className="max-w-7xl mx-auto px-6 pb-40 relative z-10">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-20 items-start">
+                {HEROES.map((hero, index) => (
+                  <div key={hero.id} className={`w-full flex justify-center transition-transform duration-500 ${index % 2 !== 0 ? 'lg:translate-y-16' : ''}`}>
+                    <HeroCard hero={hero} isSelected={flippedHeroId === hero.id} onSelect={handleHeroSelect} />
+                  </div>
+                ))}
+              </div>
+            </main>
+
+            <footer className="fixed bottom-0 w-full bg-white border-t-4 border-black py-4 z-40">
+               <div className="max-w-[1920px] mx-auto flex items-center justify-between px-4 overflow-hidden">
+                  <div className="flex items-center gap-2 font-mono text-xs md:text-sm font-bold opacity-60">
+                     <Barcode size={24} /> <span>SYSTEM STATUS: ONLINE</span>
+                  </div>
+                  <div className="absolute left-1/2 transform -translate-x-1/2 w-1/2 overflow-hidden mask-linear">
+                     <div className="animate-marquee whitespace-nowrap font-mono text-sm font-bold text-red-600">
+                        ⚠️ WARNING: EXTREME CRINGE LEVELS DETECTED ⚠️ FRIENDSHIP MAY BE TERMINATED ⚠️ PROCEED WITH CAUTION
+                     </div>
+                  </div>
+                  <div className="font-mono text-xs md:text-sm font-bold opacity-60">V.1.0.2</div>
+               </div>
+            </footer>
+            {selectedHero && <DetailView hero={selectedHero} onBack={handleBack} />}
+          </div>
+        );
+      };
+
+      // --- MOUNT ---
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(<App />);
+    </script>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>
